@@ -1,0 +1,37 @@
+using Api.Data;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace Api.Controllers;
+
+[ApiController]
+[Route("api/queues")]
+public class QueuesController : ControllerBase
+{
+    private readonly AppDbContext _db;
+    public QueuesController(AppDbContext db) { _db = db; }
+
+    [HttpGet("{courtId}")]
+    [Authorize]
+    public async Task<IActionResult> GetQueue(int courtId, [FromQuery] string mode = "Singles")
+    {
+        var queue = await _db.Queues
+            .Include(q => q.Entries.Where(e => e.IsActive))
+            .FirstOrDefaultAsync(q => q.CourtId == courtId && q.Mode.ToString() == mode);
+
+        if (queue == null)
+            return Ok(new { isOpen = false, entries = Array.Empty<object>() });
+
+        var result = new
+        {
+            id = queue.Id,
+            isOpen = queue.IsOpen,
+            mode = queue.Mode.ToString(),
+            entries = queue.Entries
+                .OrderBy(e => e.Position)
+                .Select(e => new { e.Id, e.Position, e.UserId, e.GuestSessionId, e.EnqueuedAt })
+        };
+        return Ok(result);
+    }
+}
