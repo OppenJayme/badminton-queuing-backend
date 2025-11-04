@@ -47,7 +47,20 @@ public class MatchesController : ControllerBase
         foreach (var e in ready) e.IsActive = false;
 
         _db.Matches.Add(match);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(); // ensures match.Id is generated
+
+        // NEW: write MatchPlayer snapshots
+        foreach (var e in ready)
+        {
+            _db.MatchPlayers.Add(new MatchPlayer
+            {
+                MatchId = match.Id,
+                UserId = e.UserId,
+                GuestSessionId = e.GuestSessionId,
+                EnqueuedAtSnapshot = e.EnqueuedAt
+            });
+        }
+        await _db.SaveChangesAsync();;
 
         // Repack remaining positions
         var remaining = queue.Entries.Where(e => e.IsActive).OrderBy(e => e.Position).ToList();

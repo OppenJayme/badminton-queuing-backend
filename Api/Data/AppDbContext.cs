@@ -14,6 +14,8 @@ public class AppDbContext : DbContext
     public DbSet<QueueEntry> QueueEntries => Set<QueueEntry>();
     public DbSet<Match> Matches => Set<Match>();
     public DbSet<GuestSession> GuestSessions => Set<GuestSession>();
+    
+    public DbSet<MatchPlayer> MatchPlayers => Set<MatchPlayer>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -21,6 +23,10 @@ public class AppDbContext : DbContext
         b.HasCharSet("utf8mb4");
 
         b.Entity<Match>().ToTable("matches"); // avoid MySQL keyword
+        b.Entity<MatchPlayer>().ToTable("match_players");
+
+        b.Entity<MatchPlayer>()
+            .HasIndex(mp => mp.MatchId);
 
         var adminHash = BCrypt.Net.BCrypt.HashPassword("Admin123!");
         var qmHash = BCrypt.Net.BCrypt.HashPassword("Qm123!");
