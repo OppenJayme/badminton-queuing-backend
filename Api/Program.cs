@@ -75,6 +75,14 @@ builder.Services.AddAuthorization();
 // app services
 builder.Services.AddScoped<JwtService>();
 
+builder.Services.AddCors(o =>
+{
+    o.AddPolicy("web", p => p
+        .WithOrigins("http://localhost:5173")
+        .AllowAnyHeader()
+        .AllowAnyMethod());
+});
+
 var app = builder.Build();
 
 // ===== Dev-only Swagger =====
@@ -92,6 +100,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("web");
 app.UseAuthentication();
 app.UseAuthorization();
 
