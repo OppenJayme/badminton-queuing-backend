@@ -38,10 +38,22 @@ public class AppDbContext : DbContext
             new User { Id = 3, Email = "player@example.com", DisplayName = "Player One", PasswordHash = plHash, Role = Role.Player }
         );
 
-        b.Entity<Location>().HasData(new Location { Id = 1, Name = "SmashPoint Badminton Center", IsActive = true });
+        b.Entity<Court>()
+            .HasIndex(c => new { c.LocationId, c.CourtNumber })
+            .IsUnique();
+
+        var now = new DateTime(2025, 11, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        b.Entity<Location>().HasData(new Location {
+            Id = 1,
+            Name = "Metro Sports",
+            City = "Cebu City",
+            Address = "Cebu City",
+            IsActive = true
+        });
         b.Entity<Court>().HasData(
-            new Court { Id = 1, LocationId = 1, CourtNumber = 1, IsActive = true },
-            new Court { Id = 2, LocationId = 1, CourtNumber = 2, IsActive = true }
+            new Court { Id = 1, LocationId = 1, CourtNumber = 1, Name = "Court 1", IsActive = true },
+            new Court { Id = 2, LocationId = 1, CourtNumber = 2, Name = "Court 2", IsActive = true }
         );
     }
 }
