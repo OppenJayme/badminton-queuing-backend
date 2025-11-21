@@ -104,6 +104,7 @@ app.UseCors("web");
 app.UseAuthentication();
 app.UseAuthorization();
 
+
 // Map attribute-routed controllers (Health/Auth/Locations/Queues)
 app.MapControllers();
 
