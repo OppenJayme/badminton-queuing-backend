@@ -8,20 +8,11 @@ public class AppDbContext : DbContext
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<User> Users => Set<User>();
-    public DbSet<Location> Locations => Set<Location>();
-    public DbSet<Court> Courts => Set<Court>();
+    public DbSet<Player> Players => Set<Player>();
     public DbSet<Queue> Queues => Set<Queue>();
     public DbSet<QueueEntry> QueueEntries => Set<QueueEntry>();
     public DbSet<Match> Matches => Set<Match>();
-    public DbSet<GuestSession> GuestSessions => Set<GuestSession>();
     public DbSet<MatchPlayer> MatchPlayers => Set<MatchPlayer>();
-
-    public DbSet<Group> Groups => Set<Group>();
-    public DbSet<GroupMember> GroupMembers => Set<GroupMember>();
-    public DbSet<GroupSession> GroupSessions => Set<GroupSession>();
-    public DbSet<GroupQueue> GroupQueues => Set<GroupQueue>();
-    public DbSet<GroupQueueEntry> GroupQueueEntries => Set<GroupQueueEntry>();
-    public DbSet<GroupSessionStat> GroupSessionStats => Set<GroupSessionStat>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -34,35 +25,14 @@ public class AppDbContext : DbContext
         b.Entity<MatchPlayer>()
             .HasIndex(mp => mp.MatchId);
 
-        b.Entity<GroupMember>()
-            .HasKey(gm => new { gm.GroupId, gm.UserId });
+        b.Entity<Player>()
+            .HasIndex(p => p.UserId)
+            .IsUnique()
+            .HasFilter("[UserId] IS NOT NULL");
 
-        b.Entity<GroupMember>()
-            .HasOne(gm => gm.Group)
-            .WithMany(g => g.Members)
-            .HasForeignKey(gm => gm.GroupId);
-
-        b.Entity<GroupMember>()
-            .HasOne(gm => gm.User)
-            .WithMany()
-            .HasForeignKey(gm => gm.UserId);
-
-        b.Entity<GroupQueue>()
-            .HasIndex(gq => new { gq.GroupSessionId, gq.Mode })
+        b.Entity<QueueEntry>()
+            .HasIndex(qe => new { qe.QueueId, qe.PlayerId })
             .IsUnique();
-
-        b.Entity<GroupQueueEntry>()
-            .HasIndex(e => new { e.GroupQueueId, e.Position })
-            .IsUnique();
-
-        b.Entity<GroupSessionStat>()
-            .HasKey(s => new { s.GroupSessionId, s.UserId });
-
-        b.Entity<Match>()
-            .HasOne(m => m.GroupSession)
-            .WithMany(gs => gs.Matches)
-            .HasForeignKey(m => m.GroupSessionId)
-            .OnDelete(DeleteBehavior.SetNull);
 
         var adminHash = BCrypt.Net.BCrypt.HashPassword("Admin123!");
         var qmHash = BCrypt.Net.BCrypt.HashPassword("Qm123!");
@@ -72,24 +42,6 @@ public class AppDbContext : DbContext
             new User { Id = 1, Email = "admin@example.com", DisplayName = "Admin", PasswordHash = adminHash, Role = Role.Admin },
             new User { Id = 2, Email = "qm@example.com", DisplayName = "QueueMaster", PasswordHash = qmHash, Role = Role.QueueMaster },
             new User { Id = 3, Email = "player@example.com", DisplayName = "Player One", PasswordHash = plHash, Role = Role.Player }
-        );
-
-        b.Entity<Court>()
-            .HasIndex(c => new { c.LocationId, c.CourtNumber })
-            .IsUnique();
-
-        var now = new DateTime(2025, 11, 1, 0, 0, 0, DateTimeKind.Utc);
-
-        b.Entity<Location>().HasData(new Location {
-            Id = 1,
-            Name = "Metro Sports",
-            City = "Cebu City",
-            Address = "Cebu City",
-            IsActive = true
-        });
-        b.Entity<Court>().HasData(
-            new Court { Id = 1, LocationId = 1, CourtNumber = 1, Name = "Court 1", IsActive = true },
-            new Court { Id = 2, LocationId = 1, CourtNumber = 2, Name = "Court 2", IsActive = true }
         );
     }
 }

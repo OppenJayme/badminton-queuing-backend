@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251103084643_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20251121155007_InitialQueueOnly")]
+    partial class InitialQueueOnly
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -27,97 +27,6 @@ namespace Api.Migrations
             MySqlModelBuilderExtensions.HasCharSet(modelBuilder, "utf8mb4");
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
-            modelBuilder.Entity("Api.Domain.Court", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("CourtNumber")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<int>("LocationId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LocationId");
-
-                    b.ToTable("Courts");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            CourtNumber = 1,
-                            IsActive = true,
-                            LocationId = 1
-                        },
-                        new
-                        {
-                            Id = 2,
-                            CourtNumber = 2,
-                            IsActive = true,
-                            LocationId = 1
-                        });
-                });
-
-            modelBuilder.Entity("Api.Domain.GuestSession", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("TempName")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("GuestSessions");
-                });
-
-            modelBuilder.Entity("Api.Domain.Location", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Locations");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            IsActive = true,
-                            Name = "SmashPoint Badminton Center"
-                        });
-                });
-
             modelBuilder.Entity("Api.Domain.Match", b =>
                 {
                     b.Property<int>("Id")
@@ -126,18 +35,14 @@ namespace Api.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("CourtId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime?>("FinishTime")
                         .HasColumnType("datetime(6)");
 
                     b.Property<int>("Mode")
                         .HasColumnType("int");
 
-                    b.Property<string>("PlayersCsv")
-                        .IsRequired()
-                        .HasColumnType("longtext");
+                    b.Property<int>("QueueId")
+                        .HasColumnType("int");
 
                     b.Property<string>("ScoreText")
                         .HasColumnType("longtext");
@@ -150,9 +55,68 @@ namespace Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CourtId");
+                    b.HasIndex("QueueId");
 
                     b.ToTable("matches", (string)null);
+                });
+
+            modelBuilder.Entity("Api.Domain.MatchPlayer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("EnqueuedAtSnapshot")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("MatchId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PlayerId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MatchId");
+
+                    b.HasIndex("PlayerId");
+
+                    b.ToTable("match_players", (string)null);
+                });
+
+            modelBuilder.Entity("Api.Domain.Player", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("GamesPlayed")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsRegistered")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasFilter("[UserId] IS NOT NULL");
+
+                    b.ToTable("Players");
                 });
 
             modelBuilder.Entity("Api.Domain.Queue", b =>
@@ -163,8 +127,8 @@ namespace Api.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("CourtId")
-                        .HasColumnType("int");
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
 
                     b.Property<bool>("IsOpen")
                         .HasColumnType("tinyint(1)");
@@ -172,9 +136,11 @@ namespace Api.Migrations
                     b.Property<int>("Mode")
                         .HasColumnType("int");
 
-                    b.HasKey("Id");
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("longtext");
 
-                    b.HasIndex("CourtId");
+                    b.HasKey("Id");
 
                     b.ToTable("Queues");
                 });
@@ -190,11 +156,11 @@ namespace Api.Migrations
                     b.Property<DateTime>("EnqueuedAt")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<int?>("GuestSessionId")
-                        .HasColumnType("int");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
+
+                    b.Property<int>("PlayerId")
+                        .HasColumnType("int");
 
                     b.Property<int>("Position")
                         .HasColumnType("int");
@@ -202,12 +168,12 @@ namespace Api.Migrations
                     b.Property<int>("QueueId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("UserId")
-                        .HasColumnType("int");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("QueueId");
+                    b.HasIndex("PlayerId");
+
+                    b.HasIndex("QueueId", "PlayerId")
+                        .IsUnique();
 
                     b.ToTable("QueueEntries");
                 });
@@ -252,75 +218,42 @@ namespace Api.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2025, 11, 3, 8, 46, 40, 114, DateTimeKind.Utc).AddTicks(7143),
+                            CreatedAt = new DateTime(2025, 11, 21, 15, 50, 6, 434, DateTimeKind.Utc).AddTicks(7619),
                             DisplayName = "Admin",
                             Email = "admin@example.com",
                             HideName = false,
                             IsSoftDeleted = false,
-                            PasswordHash = "$2a$11$NPS9SvmK1leaTPaMLDMIgO9oaZc657d2WrYG8g.60saRMRFdW.3.G",
+                            PasswordHash = "$2a$11$zvQ7.WHXx8ebOQnAbBKHfu1opoAzrXrFIcTAR/PGq7xHOstpsCfiq",
                             Role = 0
                         },
                         new
                         {
                             Id = 2,
-                            CreatedAt = new DateTime(2025, 11, 3, 8, 46, 40, 114, DateTimeKind.Utc).AddTicks(9992),
+                            CreatedAt = new DateTime(2025, 11, 21, 15, 50, 6, 434, DateTimeKind.Utc).AddTicks(8973),
                             DisplayName = "QueueMaster",
                             Email = "qm@example.com",
                             HideName = false,
                             IsSoftDeleted = false,
-                            PasswordHash = "$2a$11$UpEcqZ9AWJKcTBRVSy4yf.uVrwm3TV76mIFfA9lgufUNdZjF9yASK",
+                            PasswordHash = "$2a$11$fXRaeZ7iIM52KrNF.qxhJeIZ3gWn3S3KyXv/iuahA.IFtBCNFaBdG",
                             Role = 1
                         },
                         new
                         {
                             Id = 3,
-                            CreatedAt = new DateTime(2025, 11, 3, 8, 46, 40, 114, DateTimeKind.Utc).AddTicks(9998),
+                            CreatedAt = new DateTime(2025, 11, 21, 15, 50, 6, 434, DateTimeKind.Utc).AddTicks(8976),
                             DisplayName = "Player One",
                             Email = "player@example.com",
                             HideName = false,
                             IsSoftDeleted = false,
-                            PasswordHash = "$2a$11$J251amSKSvMFOuUBZIGsNO7DTUrSWOoPkyBwp8viUUX9Yb//kpte.",
+                            PasswordHash = "$2a$11$73PSAlx.FD5XNhAWytYyv.5I0X8GRFpNWOUQnh.mNm0CrPlRNMAQK",
                             Role = 2
                         });
                 });
 
-            modelBuilder.Entity("Api.Domain.Court", b =>
-                {
-                    b.HasOne("Api.Domain.Location", "Location")
-                        .WithMany("Courts")
-                        .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Location");
-                });
-
             modelBuilder.Entity("Api.Domain.Match", b =>
                 {
-                    b.HasOne("Api.Domain.Court", "Court")
-                        .WithMany()
-                        .HasForeignKey("CourtId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Court");
-                });
-
-            modelBuilder.Entity("Api.Domain.Queue", b =>
-                {
-                    b.HasOne("Api.Domain.Court", "Court")
-                        .WithMany()
-                        .HasForeignKey("CourtId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Court");
-                });
-
-            modelBuilder.Entity("Api.Domain.QueueEntry", b =>
-                {
                     b.HasOne("Api.Domain.Queue", "Queue")
-                        .WithMany("Entries")
+                        .WithMany()
                         .HasForeignKey("QueueId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -328,9 +261,51 @@ namespace Api.Migrations
                     b.Navigation("Queue");
                 });
 
-            modelBuilder.Entity("Api.Domain.Location", b =>
+            modelBuilder.Entity("Api.Domain.MatchPlayer", b =>
                 {
-                    b.Navigation("Courts");
+                    b.HasOne("Api.Domain.Match", "Match")
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Api.Domain.Player", "Player")
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Match");
+
+                    b.Navigation("Player");
+                });
+
+            modelBuilder.Entity("Api.Domain.Player", b =>
+                {
+                    b.HasOne("Api.Domain.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Api.Domain.QueueEntry", b =>
+                {
+                    b.HasOne("Api.Domain.Player", "Player")
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Api.Domain.Queue", "Queue")
+                        .WithMany("Entries")
+                        .HasForeignKey("QueueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Player");
+
+                    b.Navigation("Queue");
                 });
 
             modelBuilder.Entity("Api.Domain.Queue", b =>

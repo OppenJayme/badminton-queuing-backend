@@ -4,163 +4,194 @@ using Api.Dtos;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 
 namespace Api.Controllers;
 
 [ApiController]
 [Route("api/queues")]
+[Authorize]
 public class QueuesController : ControllerBase
 {
     private readonly AppDbContext _db;
     public QueuesController(AppDbContext db) { _db = db; }
 
-    private static QueueMode ParseMode(string mode)
-        => Enum.TryParse<QueueMode>(mode, true, out var m) ? m : QueueMode.Singles;
+    private QueueMode ParseMode(QueueMode mode) => Enum.IsDefined(typeof(QueueMode), mode) ? mode : QueueMode.Singles;
 
-    // Helper: find or create a queue for a court+mode
-    private async Task<Queue> GetOrCreateQueueAsync(int courtId, QueueMode mode)
+    [HttpPost]
+    public async Task<IActionResult> CreateQueue([FromBody] CreateQueueRequest req)
     {
-        var q = await _db.Queues
-            .Include(x => x.Entries.Where(e => e.IsActive))
-            .FirstOrDefaultAsync(x => x.CourtId == courtId && x.Mode == mode);
-
-        if (q == null)
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        var q = new Queue
         {
-            q = new Queue { CourtId = courtId, Mode = mode, IsOpen = false };
-            _db.Queues.Add(q);
-            await _db.SaveChangesAsync();
-            // re-load with entries
-            q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive))
-                                .FirstAsync(x => x.Id == q.Id);
-        }
-        return q;
+            Name = req.Name,
+            Mode = ParseMode(req.Mode),
+            IsOpen = true
+        };
+        _db.Queues.Add(q);
+        await _db.SaveChangesAsync();
+        return Ok(new QueueSummaryDto
+        {
+            Id = q.Id,
+            Name = q.Name,
+            Mode = q.Mode.ToString(),
+            IsOpen = q.IsOpen,
+            CreatedAt = q.CreatedAt
+        });
     }
 
-    // ===== Read-only (already had) =====
-    // GET /api/queues/{courtId}?mode=Singles|Doubles
-    [HttpGet("{courtId}")]
-    [Authorize]
-    public async Task<IActionResult> GetQueue(int courtId, [FromQuery] string mode = "Singles")
+    [HttpGet("{queueId}")]
+    public async Task<IActionResult> GetQueue(int queueId)
     {
-        var q = await GetOrCreateQueueAsync(courtId, ParseMode(mode));
-        var result = new
+        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId);
+        if (q == null) return NotFound(new { message = "Queue not found" });
+
+        var playerIds = q.Entries.Select(e => e.PlayerId).ToList();
+        var players = await _db.Players.Where(p => playerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p);
+
+        var entries = q.Entries
+            .OrderBy(e => e.Position)
+            .Select(e => new QueueEntryDto
+            {
+                Id = e.Id,
+                Position = e.Position,
+                PlayerId = e.PlayerId,
+                DisplayName = players.TryGetValue(e.PlayerId, out var p) ? p.DisplayName : "Player",
+                GamesPlayed = players.TryGetValue(e.PlayerId, out var p2) ? p2.GamesPlayed : 0,
+                JoinedAt = e.EnqueuedAt
+            })
+            .ToList();
+
+        return Ok(new
         {
             id = q.Id,
-            isOpen = q.IsOpen,
+            name = q.Name,
             mode = q.Mode.ToString(),
-            entries = q.Entries
-                .OrderBy(e => e.Position)
-                .Select(e => new { e.Id, e.Position, e.UserId, e.GuestSessionId, e.EnqueuedAt })
-        };
-        return Ok(result);
+            isOpen = q.IsOpen,
+            entries
+        });
     }
 
-    // ===== QM: open/close =====
-    // POST /api/queues/{courtId}/status
-    [HttpPost("{courtId}/status")]
-    [Authorize(Roles = "QueueMaster,Admin")]
-    public async Task<IActionResult> SetStatus(int courtId, [FromBody] OpenCloseQueueRequest req)
+    [HttpPost("{queueId}/status")]
+    public async Task<IActionResult> SetStatus(int queueId, [FromBody] bool isOpen)
     {
-        var court = await _db.Courts.FindAsync(courtId);
-        if (court == null || !court.IsActive) return NotFound(new { message = "Court not found" });
-
-        var q = await GetOrCreateQueueAsync(courtId, ParseMode(req.Mode));
-        q.IsOpen = req.IsOpen;
+        var q = await _db.Queues.FindAsync(queueId);
+        if (q == null) return NotFound(new { message = "Queue not found" });
+        q.IsOpen = isOpen;
         await _db.SaveChangesAsync();
-        return Ok(new { q.Id, q.IsOpen, mode = q.Mode.ToString() });
+        return Ok(new { q.Id, q.IsOpen });
     }
 
-    // ===== Enqueue (Player self or QM/Admin on behalf) =====
-    // POST /api/queues/{courtId}/enqueue?mode=Singles|Doubles
-    [HttpPost("{courtId}/enqueue")]
-    [Authorize] // Player/QM/Admin
-    public async Task<IActionResult> Enqueue(int courtId, [FromQuery] string mode, [FromBody] EnqueueRequest body)
+    [HttpPost("{queueId}/enqueue")]
+    public async Task<IActionResult> Enqueue(int queueId, [FromBody] EnqueueRequest req)
     {
-        var q = await GetOrCreateQueueAsync(courtId, ParseMode(mode));
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId);
+        if (q == null) return NotFound(new { message = "Queue not found" });
         if (!q.IsOpen) return BadRequest(new { message = "Queue is closed" });
 
-        // Identify who to enqueue
-        int? userId = body.UserId;
-        int? guestSessionId = body.GuestSessionId;
+        var player = await _db.Players.FindAsync(req.PlayerId);
+        if (player == null) return NotFound(new { message = "Player not found" });
 
-        // If Player calls with no explicit user, infer from token
-        if (userId == null && guestSessionId == null)
-        {
-            var claimSub = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
-            if (int.TryParse(claimSub, out var currentUserId))
-                userId = currentUserId;
-        }
-
-        if (userId == null && guestSessionId == null)
-            return BadRequest(new { message = "Specify userId or guestSessionId, or call as a logged-in Player." });
-
-        // Enforce one active queue per user (simple check)
-        if (userId != null)
-        {
-            bool alreadyQueued = await _db.QueueEntries
-                .AnyAsync(e => e.IsActive && e.UserId == userId);
-            if (alreadyQueued) return Conflict(new { message = "User already in an active queue" });
-        }
+        bool exists = q.Entries.Any(e => e.PlayerId == req.PlayerId && e.IsActive);
+        if (exists) return Conflict(new { message = "Player already in queue" });
 
         var nextPos = q.Entries.Any() ? q.Entries.Max(e => e.Position) + 1 : 1;
         var entry = new QueueEntry
         {
             QueueId = q.Id,
-            UserId = userId,
-            GuestSessionId = guestSessionId,
+            PlayerId = req.PlayerId,
             Position = nextPos,
             IsActive = true
         };
         _db.QueueEntries.Add(entry);
         await _db.SaveChangesAsync();
-
-        return Ok(new
-        {
-            message = "Enqueued",
-            entry = new { entry.Id, entry.Position, entry.UserId, entry.GuestSessionId },
-            queueLength = await _db.QueueEntries.CountAsync(e => e.QueueId == q.Id && e.IsActive)
-        });
+        return await GetQueue(queueId);
     }
 
-    // ===== Leave (Player removes self) or QM/Admin removes by userId =====
-    // POST /api/queues/{courtId}/leave?mode=Singles|Doubles
-    [HttpPost("{courtId}/leave")]
-    [Authorize] // Player/QM/Admin
-    public async Task<IActionResult> Leave(int courtId, [FromQuery] string mode, [FromBody] LeaveRequest body)
+    [HttpPost("{queueId}/remove")]
+    public async Task<IActionResult> Remove(int queueId, [FromBody] RemoveRequest req)
     {
-        var q = await GetOrCreateQueueAsync(courtId, ParseMode(mode));
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId);
+        if (q == null) return NotFound(new { message = "Queue not found" });
 
-        int? targetUserId = body.UserId;
-        // If not provided, infer from token for Player self-leave
-        if (targetUserId == null)
-        {
-            var claimSub = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
-            if (int.TryParse(claimSub, out var currentUserId))
-                targetUserId = currentUserId;
-        }
-
-        if (targetUserId == null)
-            return BadRequest(new { message = "No user specified" });
-
-        var entry = await _db.QueueEntries
-            .Where(e => e.QueueId == q.Id && e.IsActive && e.UserId == targetUserId)
-            .OrderBy(e => e.Position)
-            .FirstOrDefaultAsync();
-
+        var entry = q.Entries.FirstOrDefault(e => e.PlayerId == req.PlayerId && e.IsActive);
         if (entry == null) return NotFound(new { message = "Not in queue" });
 
         entry.IsActive = false;
         await _db.SaveChangesAsync();
 
-        // Re-pack positions (simple)
-        var remaining = await _db.QueueEntries
-            .Where(e => e.QueueId == q.Id && e.IsActive)
-            .OrderBy(e => e.Position)
-            .ToListAsync();
+        var remaining = q.Entries.Where(e => e.IsActive).OrderBy(e => e.Position).ToList();
         for (int i = 0; i < remaining.Count; i++) remaining[i].Position = i + 1;
         await _db.SaveChangesAsync();
 
-        return Ok(new { message = "Left queue", queueLength = remaining.Count });
+        return await GetQueue(queueId);
+    }
+
+    [HttpPost("{queueId}/start-match")]
+    public async Task<IActionResult> StartMatch(int queueId)
+    {
+        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId);
+        if (q == null) return NotFound(new { message = "Queue not found" });
+
+        var playerIds = q.Entries.Select(e => e.PlayerId).ToList();
+        var players = await _db.Players.Where(p => playerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p);
+
+        int needed = q.Mode == QueueMode.Singles ? 2 : 4;
+        var ready = q.Entries
+            .Where(e => e.IsActive)
+            .OrderBy(e => players.TryGetValue(e.PlayerId, out var p) ? p.GamesPlayed : 0)
+            .ThenBy(e => e.EnqueuedAt)
+            .Take(needed)
+            .ToList();
+
+        if (ready.Count < needed) return BadRequest(new { message = "Not enough players" });
+
+        var match = new Match
+        {
+            QueueId = queueId,
+            Mode = q.Mode,
+            Status = MatchStatus.Ongoing,
+            StartTime = DateTime.UtcNow
+        };
+        _db.Matches.Add(match);
+        await _db.SaveChangesAsync();
+
+        foreach (var e in ready)
+        {
+            e.IsActive = false;
+            if (players.TryGetValue(e.PlayerId, out var p))
+            {
+                p.GamesPlayed += 1;
+            }
+            _db.MatchPlayers.Add(new MatchPlayer
+            {
+                MatchId = match.Id,
+                PlayerId = e.PlayerId,
+                EnqueuedAtSnapshot = e.EnqueuedAt
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var remaining = q.Entries.Where(e => e.IsActive).OrderBy(e => e.Position).ToList();
+        for (int i = 0; i < remaining.Count; i++) remaining[i].Position = i + 1;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { matchId = match.Id, message = "Match started" });
+    }
+
+    [HttpPost("{queueId}/finish-match")]
+    public async Task<IActionResult> FinishMatch(int queueId, [FromBody] FinishMatchRequest req)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        var match = await _db.Matches.FirstOrDefaultAsync(m => m.Id == req.MatchId && m.QueueId == queueId);
+        if (match == null) return NotFound(new { message = "Match not found" });
+        if (match.Status != MatchStatus.Ongoing) return BadRequest(new { message = "Match not ongoing" });
+
+        match.Status = MatchStatus.Finished;
+        match.FinishTime = DateTime.UtcNow;
+        match.ScoreText = req.ScoreText;
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "Match finished", durationSeconds = match.DurationSeconds });
     }
 }
