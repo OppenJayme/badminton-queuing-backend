@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Api.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class InitialQueueOnly : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -18,36 +18,20 @@ namespace Api.Migrations
                 .Annotation("MySql:CharSet", "utf8mb4");
 
             migrationBuilder.CreateTable(
-                name: "GuestSessions",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    TempName = table.Column<string>(type: "longtext", nullable: false, collation: "utf8mb4_0900_ai_ci")
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
-                    ExpiresAt = table.Column<DateTime>(type: "datetime(6)", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_GuestSessions", x => x.Id);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4")
-                .Annotation("Relational:Collation", "utf8mb4_0900_ai_ci");
-
-            migrationBuilder.CreateTable(
-                name: "Locations",
+                name: "Queues",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
                     Name = table.Column<string>(type: "longtext", nullable: false, collation: "utf8mb4_0900_ai_ci")
                         .Annotation("MySql:CharSet", "utf8mb4"),
-                    IsActive = table.Column<bool>(type: "tinyint(1)", nullable: false)
+                    Mode = table.Column<int>(type: "int", nullable: false),
+                    IsOpen = table.Column<bool>(type: "tinyint(1)", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Locations", x => x.Id);
+                    table.PrimaryKey("PK_Queues", x => x.Id);
                 })
                 .Annotation("MySql:CharSet", "utf8mb4")
                 .Annotation("Relational:Collation", "utf8mb4_0900_ai_ci");
@@ -77,39 +61,14 @@ namespace Api.Migrations
                 .Annotation("Relational:Collation", "utf8mb4_0900_ai_ci");
 
             migrationBuilder.CreateTable(
-                name: "Courts",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    LocationId = table.Column<int>(type: "int", nullable: false),
-                    CourtNumber = table.Column<int>(type: "int", nullable: false),
-                    IsActive = table.Column<bool>(type: "tinyint(1)", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Courts", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Courts_Locations_LocationId",
-                        column: x => x.LocationId,
-                        principalTable: "Locations",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4")
-                .Annotation("Relational:Collation", "utf8mb4_0900_ai_ci");
-
-            migrationBuilder.CreateTable(
                 name: "matches",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    CourtId = table.Column<int>(type: "int", nullable: false),
+                    QueueId = table.Column<int>(type: "int", nullable: false),
                     Mode = table.Column<int>(type: "int", nullable: false),
                     Status = table.Column<int>(type: "int", nullable: false),
-                    PlayersCsv = table.Column<string>(type: "longtext", nullable: false, collation: "utf8mb4_0900_ai_ci")
-                        .Annotation("MySql:CharSet", "utf8mb4"),
                     StartTime = table.Column<DateTime>(type: "datetime(6)", nullable: true),
                     FinishTime = table.Column<DateTime>(type: "datetime(6)", nullable: true),
                     ScoreText = table.Column<string>(type: "longtext", nullable: true, collation: "utf8mb4_0900_ai_ci")
@@ -119,9 +78,9 @@ namespace Api.Migrations
                 {
                     table.PrimaryKey("PK_matches", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_matches_Courts_CourtId",
-                        column: x => x.CourtId,
-                        principalTable: "Courts",
+                        name: "FK_matches_Queues_QueueId",
+                        column: x => x.QueueId,
+                        principalTable: "Queues",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 })
@@ -129,22 +88,53 @@ namespace Api.Migrations
                 .Annotation("Relational:Collation", "utf8mb4_0900_ai_ci");
 
             migrationBuilder.CreateTable(
-                name: "Queues",
+                name: "Players",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    CourtId = table.Column<int>(type: "int", nullable: false),
-                    Mode = table.Column<int>(type: "int", nullable: false),
-                    IsOpen = table.Column<bool>(type: "tinyint(1)", nullable: false)
+                    UserId = table.Column<int>(type: "int", nullable: true),
+                    DisplayName = table.Column<string>(type: "longtext", nullable: false, collation: "utf8mb4_0900_ai_ci")
+                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    IsRegistered = table.Column<bool>(type: "tinyint(1)", nullable: false),
+                    GamesPlayed = table.Column<int>(type: "int", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Queues", x => x.Id);
+                    table.PrimaryKey("PK_Players", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Queues_Courts_CourtId",
-                        column: x => x.CourtId,
-                        principalTable: "Courts",
+                        name: "FK_Players_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id");
+                })
+                .Annotation("MySql:CharSet", "utf8mb4")
+                .Annotation("Relational:Collation", "utf8mb4_0900_ai_ci");
+
+            migrationBuilder.CreateTable(
+                name: "match_players",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
+                    MatchId = table.Column<int>(type: "int", nullable: false),
+                    PlayerId = table.Column<int>(type: "int", nullable: false),
+                    EnqueuedAtSnapshot = table.Column<DateTime>(type: "datetime(6)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_match_players", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_match_players_Players_PlayerId",
+                        column: x => x.PlayerId,
+                        principalTable: "Players",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_match_players_matches_MatchId",
+                        column: x => x.MatchId,
+                        principalTable: "matches",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 })
@@ -158,8 +148,7 @@ namespace Api.Migrations
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
                     QueueId = table.Column<int>(type: "int", nullable: false),
-                    UserId = table.Column<int>(type: "int", nullable: true),
-                    GuestSessionId = table.Column<int>(type: "int", nullable: true),
+                    PlayerId = table.Column<int>(type: "int", nullable: false),
                     Position = table.Column<int>(type: "int", nullable: false),
                     EnqueuedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
                     IsActive = table.Column<bool>(type: "tinyint(1)", nullable: false)
@@ -167,6 +156,12 @@ namespace Api.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_QueueEntries", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_QueueEntries_Players_PlayerId",
+                        column: x => x.PlayerId,
+                        principalTable: "Players",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_QueueEntries_Queues_QueueId",
                         column: x => x.QueueId,
@@ -178,73 +173,69 @@ namespace Api.Migrations
                 .Annotation("Relational:Collation", "utf8mb4_0900_ai_ci");
 
             migrationBuilder.InsertData(
-                table: "Locations",
-                columns: new[] { "Id", "IsActive", "Name" },
-                values: new object[] { 1, true, "SmashPoint Badminton Center" });
-
-            migrationBuilder.InsertData(
                 table: "Users",
                 columns: new[] { "Id", "CreatedAt", "DisplayName", "Email", "HideName", "IsSoftDeleted", "PasswordHash", "Role" },
                 values: new object[,]
                 {
-                    { 1, new DateTime(2025, 11, 3, 8, 46, 40, 114, DateTimeKind.Utc).AddTicks(7143), "Admin", "admin@example.com", false, false, "$2a$11$NPS9SvmK1leaTPaMLDMIgO9oaZc657d2WrYG8g.60saRMRFdW.3.G", 0 },
-                    { 2, new DateTime(2025, 11, 3, 8, 46, 40, 114, DateTimeKind.Utc).AddTicks(9992), "QueueMaster", "qm@example.com", false, false, "$2a$11$UpEcqZ9AWJKcTBRVSy4yf.uVrwm3TV76mIFfA9lgufUNdZjF9yASK", 1 },
-                    { 3, new DateTime(2025, 11, 3, 8, 46, 40, 114, DateTimeKind.Utc).AddTicks(9998), "Player One", "player@example.com", false, false, "$2a$11$J251amSKSvMFOuUBZIGsNO7DTUrSWOoPkyBwp8viUUX9Yb//kpte.", 2 }
-                });
-
-            migrationBuilder.InsertData(
-                table: "Courts",
-                columns: new[] { "Id", "CourtNumber", "IsActive", "LocationId" },
-                values: new object[,]
-                {
-                    { 1, 1, true, 1 },
-                    { 2, 2, true, 1 }
+                    { 1, new DateTime(2025, 11, 21, 15, 50, 6, 434, DateTimeKind.Utc).AddTicks(7619), "Admin", "admin@example.com", false, false, "$2a$11$zvQ7.WHXx8ebOQnAbBKHfu1opoAzrXrFIcTAR/PGq7xHOstpsCfiq", 0 },
+                    { 2, new DateTime(2025, 11, 21, 15, 50, 6, 434, DateTimeKind.Utc).AddTicks(8973), "QueueMaster", "qm@example.com", false, false, "$2a$11$fXRaeZ7iIM52KrNF.qxhJeIZ3gWn3S3KyXv/iuahA.IFtBCNFaBdG", 1 },
+                    { 3, new DateTime(2025, 11, 21, 15, 50, 6, 434, DateTimeKind.Utc).AddTicks(8976), "Player One", "player@example.com", false, false, "$2a$11$73PSAlx.FD5XNhAWytYyv.5I0X8GRFpNWOUQnh.mNm0CrPlRNMAQK", 2 }
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_Courts_LocationId",
-                table: "Courts",
-                column: "LocationId");
+                name: "IX_match_players_MatchId",
+                table: "match_players",
+                column: "MatchId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_matches_CourtId",
+                name: "IX_match_players_PlayerId",
+                table: "match_players",
+                column: "PlayerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_matches_QueueId",
                 table: "matches",
-                column: "CourtId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_QueueEntries_QueueId",
-                table: "QueueEntries",
                 column: "QueueId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Queues_CourtId",
-                table: "Queues",
-                column: "CourtId");
+                name: "IX_Players_UserId",
+                table: "Players",
+                column: "UserId",
+                unique: true,
+                filter: "[UserId] IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_QueueEntries_PlayerId",
+                table: "QueueEntries",
+                column: "PlayerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_QueueEntries_QueueId_PlayerId",
+                table: "QueueEntries",
+                columns: new[] { "QueueId", "PlayerId" },
+                unique: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "GuestSessions");
-
-            migrationBuilder.DropTable(
-                name: "matches");
+                name: "match_players");
 
             migrationBuilder.DropTable(
                 name: "QueueEntries");
 
             migrationBuilder.DropTable(
-                name: "Users");
+                name: "matches");
+
+            migrationBuilder.DropTable(
+                name: "Players");
 
             migrationBuilder.DropTable(
                 name: "Queues");
 
             migrationBuilder.DropTable(
-                name: "Courts");
-
-            migrationBuilder.DropTable(
-                name: "Locations");
+                name: "Users");
         }
     }
 }

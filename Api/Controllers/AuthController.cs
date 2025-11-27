@@ -20,6 +20,39 @@ public class AuthController : ControllerBase
         _jwt = jwt;
     }
 
+    [HttpPost("register")]
+    public async Task<IActionResult> Register([FromBody] RegisterRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password) || string.IsNullOrWhiteSpace(req.DisplayName))
+            return BadRequest(new { message = "Email, display name, and password are required" });
+
+        if (req.Password.Length < 6)
+            return BadRequest(new { message = "Password must be at least 6 characters" });
+
+        var exists = await _db.Users.AnyAsync(u => u.Email == req.Email && !u.IsSoftDeleted);
+        if (exists) return Conflict(new { message = "Email already registered" });
+
+        var user = new User
+        {
+            Email = req.Email,
+            DisplayName = req.DisplayName,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
+            Role = Role.Player
+        };
+
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        var token = _jwt.CreateToken(user);
+        return Ok(new RegisterResponse
+        {
+            UserId = user.Id,
+            Token = token,
+            Role = user.Role.ToString(),
+            DisplayName = user.DisplayName
+        });
+    }
+
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest req)
     {
