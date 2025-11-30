@@ -13,6 +13,8 @@ public class AppDbContext : DbContext
     public DbSet<QueueEntry> QueueEntries => Set<QueueEntry>();
     public DbSet<Match> Matches => Set<Match>();
     public DbSet<MatchPlayer> MatchPlayers => Set<MatchPlayer>();
+    public DbSet<Session> Sessions => Set<Session>();
+    public DbSet<SessionMember> SessionMembers => Set<SessionMember>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -26,9 +28,8 @@ public class AppDbContext : DbContext
             .HasIndex(mp => mp.MatchId);
 
         b.Entity<Player>()
-            .HasIndex(p => p.UserId)
-            .IsUnique()
-            .HasFilter("[UserId] IS NOT NULL");
+            .HasIndex(p => new { p.OwnerUserId, p.UserId })
+            .IsUnique();
         b.Entity<Player>()
             .HasIndex(p => p.OwnerUserId);
 
@@ -37,6 +38,14 @@ public class AppDbContext : DbContext
 
         b.Entity<QueueEntry>()
             .HasIndex(qe => new { qe.QueueId, qe.PlayerId })
+            .IsUnique();
+
+        b.Entity<Session>()
+            .HasIndex(s => new { s.OwnerUserId, s.Name })
+            .IsUnique();
+
+        b.Entity<SessionMember>()
+            .HasIndex(sm => new { sm.SessionId, sm.UserId })
             .IsUnique();
 
         // Stable seed values to avoid churn across migrations

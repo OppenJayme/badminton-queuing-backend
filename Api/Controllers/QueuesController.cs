@@ -27,14 +27,59 @@ public class QueuesController : ControllerBase
         return Enum.TryParse<QueueMode>(mode, true, out var parsed) ? parsed : QueueMode.Singles;
     }
 
+    private async Task<bool> IsOwnerOrCoHost(int? sessionId, int userId)
+    {
+        if (sessionId == null) return false;
+        var session = await _db.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId.Value);
+        if (session == null) return false;
+        if (session.OwnerUserId == userId) return true;
+        var mem = await _db.SessionMembers.FirstOrDefaultAsync(m => m.SessionId == sessionId && m.UserId == userId);
+        return mem != null && mem.Role == SessionMemberRole.CoHost;
+    }
+
+    private async Task<bool> IsSessionMember(int? sessionId, int userId)
+    {
+        if (sessionId == null) return false;
+        var mem = await _db.SessionMembers.FirstOrDefaultAsync(m => m.SessionId == sessionId && m.UserId == userId);
+        return mem != null;
+    }
+
+    private async Task<bool> IsCheckedInMember(int? sessionId, int userId)
+    {
+        if (sessionId == null) return false;
+        var mem = await _db.SessionMembers.FirstOrDefaultAsync(m => m.SessionId == sessionId && m.UserId == userId);
+        return mem != null && mem.Status == SessionMemberStatus.CheckedIn;
+    }
+
+    private async Task<bool> CanReadQueue(Queue queue, int userId)
+    {
+        if (queue.OwnerUserId == userId) return true;
+        if (queue.SessionId != null)
+        {
+            return await IsSessionMember(queue.SessionId, userId) || await IsOwnerOrCoHost(queue.SessionId, userId);
+        }
+        return false;
+    }
+
+    private async Task<bool> CanManageQueue(Queue queue, int userId)
+    {
+        if (queue.OwnerUserId == userId) return true;
+        if (queue.SessionId != null)
+        {
+            return await IsOwnerOrCoHost(queue.SessionId, userId);
+        }
+        return false;
+    }
+
     [HttpGet("{queueId}/matches")]
     public async Task<IActionResult> GetMatches(int queueId, [FromQuery] string? status = null)
     {
         var userId = CurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var queue = await _db.Queues.FirstOrDefaultAsync(q => q.Id == queueId && q.OwnerUserId == userId);
+        var queue = await _db.Queues.FirstOrDefaultAsync(q => q.Id == queueId);
         if (queue == null) return NotFound(new { message = "Queue not found" });
+        if (!await CanReadQueue(queue, userId.Value)) return Forbid();
 
         var query = _db.Matches
             .Where(m => m.QueueId == queueId)
@@ -80,8 +125,9 @@ public class QueuesController : ControllerBase
         var userId = CurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var queue = await _db.Queues.FirstOrDefaultAsync(q => q.Id == queueId && q.OwnerUserId == userId);
+        var queue = await _db.Queues.FirstOrDefaultAsync(q => q.Id == queueId);
         if (queue == null) return NotFound(new { message = "Queue not found" });
+        if (!await CanReadQueue(queue, userId.Value)) return Forbid();
 
         var matches = await _db.Matches
             .Where(m => m.QueueId == queueId && m.Status == MatchStatus.Ongoing)
@@ -119,12 +165,22 @@ public class QueuesController : ControllerBase
         var name = string.IsNullOrWhiteSpace(req?.Name) ? "Queue" : req!.Name!;
         var modeString = string.IsNullOrWhiteSpace(req?.Mode) ? "Singles" : req!.Mode!;
 
+        int? sessionId = req?.SessionId;
+        if (sessionId != null)
+        {
+            var session = await _db.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId);
+            if (session == null) return NotFound(new { message = "Session not found" });
+            var canManage = await IsOwnerOrCoHost(sessionId, userId.Value);
+            if (!canManage) return Forbid();
+        }
+
         var q = new Queue
         {
             Name = name,
             Mode = ParseMode(modeString),
             IsOpen = true,
-            OwnerUserId = userId
+            OwnerUserId = userId,
+            SessionId = sessionId
         };
         _db.Queues.Add(q);
         await _db.SaveChangesAsync();
@@ -144,8 +200,9 @@ public class QueuesController : ControllerBase
         var userId = CurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId && x.OwnerUserId == userId);
+        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId);
         if (q == null) return NotFound(new { message = "Queue not found" });
+        if (!await CanReadQueue(q, userId.Value)) return Forbid();
 
         var playerIds = q.Entries.Select(e => e.PlayerId).ToList();
         var players = await _db.Players.Where(p => playerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p);
@@ -169,6 +226,7 @@ public class QueuesController : ControllerBase
             name = q.Name,
             mode = q.Mode.ToString(),
             isOpen = q.IsOpen,
+            sessionId = q.SessionId,
             entries
         });
     }
@@ -178,8 +236,9 @@ public class QueuesController : ControllerBase
     {
         var userId = CurrentUserId();
         if (userId == null) return Unauthorized();
-        var q = await _db.Queues.FirstOrDefaultAsync(q => q.Id == queueId && q.OwnerUserId == userId);
+        var q = await _db.Queues.FirstOrDefaultAsync(q => q.Id == queueId);
         if (q == null) return NotFound(new { message = "Queue not found" });
+        if (!await CanManageQueue(q, userId.Value)) return Forbid();
         q.IsOpen = isOpen;
         await _db.SaveChangesAsync();
         return Ok(new { q.Id, q.IsOpen });
@@ -191,12 +250,23 @@ public class QueuesController : ControllerBase
         var userId = CurrentUserId();
         if (userId == null) return Unauthorized();
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
-        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId && x.OwnerUserId == userId);
+        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId);
         if (q == null) return NotFound(new { message = "Queue not found" });
+        if (!await CanManageQueue(q, userId.Value)) return Forbid();
         if (!q.IsOpen) return BadRequest(new { message = "Queue is closed" });
 
-        var player = await _db.Players.FirstOrDefaultAsync(p => p.Id == req.PlayerId && p.OwnerUserId == userId);
+        var player = await _db.Players.FirstOrDefaultAsync(p => p.Id == req.PlayerId);
         if (player == null) return NotFound(new { message = "Player not found" });
+
+        if (q.SessionId != null)
+        {
+            if (player.UserId == null)
+            {
+                return BadRequest(new { message = "Only registered, checked-in members can be queued in a session" });
+            }
+            var checkedIn = await IsCheckedInMember(q.SessionId, player.UserId.Value);
+            if (!checkedIn) return BadRequest(new { message = "Player must be a checked-in session member" });
+        }
 
         bool exists = q.Entries.Any(e => e.PlayerId == req.PlayerId && e.IsActive);
         if (exists) return Conflict(new { message = "Player already in queue" });
@@ -235,8 +305,9 @@ public class QueuesController : ControllerBase
         var userId = CurrentUserId();
         if (userId == null) return Unauthorized();
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
-        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId && x.OwnerUserId == userId);
+        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId);
         if (q == null) return NotFound(new { message = "Queue not found" });
+        if (!await CanManageQueue(q, userId.Value)) return Forbid();
 
         var entry = q.Entries.FirstOrDefault(e => e.PlayerId == req.PlayerId && e.IsActive);
         if (entry == null) return NotFound(new { message = "Not in queue" });
@@ -257,8 +328,9 @@ public class QueuesController : ControllerBase
         var userId = CurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId && x.OwnerUserId == userId);
+        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId);
         if (q == null) return NotFound(new { message = "Queue not found" });
+        if (!await CanManageQueue(q, userId.Value)) return Forbid();
 
         var playerIds = q.Entries.Select(e => e.PlayerId).ToList();
         var players = await _db.Players.Where(p => playerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p);
@@ -317,8 +389,9 @@ public class QueuesController : ControllerBase
 
         var distinctIds = req.PlayerIds.Distinct().ToList();
 
-        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId && x.OwnerUserId == userId);
+        var q = await _db.Queues.Include(x => x.Entries.Where(e => e.IsActive)).FirstOrDefaultAsync(x => x.Id == queueId);
         if (q == null) return NotFound(new { message = "Queue not found" });
+        if (!await CanManageQueue(q, userId.Value)) return Forbid();
 
         var mode = req.Mode != null ? ParseMode(req.Mode) : q.Mode;
         int needed = mode == QueueMode.Singles ? 2 : 4;
@@ -371,8 +444,9 @@ public class QueuesController : ControllerBase
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var match = await _db.Matches
             .Include(m => m.Queue)
-            .FirstOrDefaultAsync(m => m.Id == req.MatchId && m.QueueId == queueId && m.Queue!.OwnerUserId == userId);
+            .FirstOrDefaultAsync(m => m.Id == req.MatchId && m.QueueId == queueId);
         if (match == null) return NotFound(new { message = "Match not found" });
+        if (!await CanManageQueue(match.Queue!, userId.Value)) return Forbid();
         if (match.Status != MatchStatus.Ongoing) return BadRequest(new { message = "Match not ongoing" });
 
         var queue = await _db.Queues.Include(q => q.Entries).FirstOrDefaultAsync(q => q.Id == queueId);

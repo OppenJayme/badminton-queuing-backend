@@ -9,6 +9,7 @@ public class CreateQueueRequest
     public string? Name { get; set; }
     // Accept any casing/string; controller will parse/fallback
     public string? Mode { get; set; }
+    public int? SessionId { get; set; }
 }
 
 public class QueueSummaryDto
