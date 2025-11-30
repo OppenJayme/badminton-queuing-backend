@@ -77,3 +77,9 @@ public class FinishMatchRequest
     [MaxLength(3)]
     public List<SetScoreDto> Sets { get; set; } = new();
 }
+
+public class SetQueueModeRequest
+{
+    [Required]
+    public string Mode { get; set; } = "Singles";
+}
