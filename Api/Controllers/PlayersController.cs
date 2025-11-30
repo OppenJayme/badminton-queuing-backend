@@ -36,7 +36,8 @@ public class PlayersController : ControllerBase
                 Id = p.Id,
                 DisplayName = p.DisplayName,
                 IsRegistered = p.IsRegistered,
-                GamesPlayed = p.GamesPlayed
+                GamesPlayed = p.GamesPlayed,
+                UserId = p.UserId
             })
             .ToListAsync();
         return Ok(list);
@@ -55,22 +56,45 @@ public class PlayersController : ControllerBase
             if (!userExists) return BadRequest(new { message = "User not found" });
         }
 
-        var p = new Player
+        Player? existing = null;
+        if (req.UserId != null)
         {
-            DisplayName = req.DisplayName,
-            IsRegistered = req.IsRegistered,
-            UserId = req.UserId,
-            OwnerUserId = userId
-        };
-        _db.Players.Add(p);
-        await _db.SaveChangesAsync();
+            // If this is a registered user, reuse the existing player bound to that user.
+            existing = await _db.Players.FirstOrDefaultAsync(p =>
+                p.OwnerUserId == userId && p.UserId == req.UserId);
+        }
+        else
+        {
+            // For manual (unregistered) entries, reuse by display name for this owner.
+            existing = await _db.Players.FirstOrDefaultAsync(p =>
+                p.OwnerUserId == userId && p.DisplayName == req.DisplayName);
+        }
+
+        Player p;
+        if (existing != null)
+        {
+            p = existing;
+        }
+        else
+        {
+            p = new Player
+            {
+                DisplayName = req.DisplayName,
+                IsRegistered = req.IsRegistered,
+                UserId = req.UserId,
+                OwnerUserId = userId
+            };
+            _db.Players.Add(p);
+            await _db.SaveChangesAsync();
+        }
 
         return Ok(new PlayerDto
         {
             Id = p.Id,
             DisplayName = p.DisplayName,
             IsRegistered = p.IsRegistered,
-            GamesPlayed = p.GamesPlayed
+            GamesPlayed = p.GamesPlayed,
+            UserId = p.UserId
         });
     }
 

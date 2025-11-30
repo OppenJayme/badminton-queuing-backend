@@ -16,4 +16,5 @@ public class PlayerDto
     public string DisplayName { get; set; } = "";
     public bool IsRegistered { get; set; }
     public int GamesPlayed { get; set; }
+    public int? UserId { get; set; }
 }
