@@ -37,6 +37,30 @@ public class QueuesController : ControllerBase
         return mem != null && mem.Role == SessionMemberRole.CoHost;
     }
 
+    [HttpPost("{queueId}/mode")]
+    public async Task<IActionResult> SetMode(int queueId, [FromBody] SetQueueModeRequest req)
+    {
+        var userId = CurrentUserId();
+        if (userId == null) return Unauthorized();
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+        var q = await _db.Queues.FirstOrDefaultAsync(x => x.Id == queueId);
+        if (q == null) return NotFound(new { message = "Queue not found" });
+        if (!await CanManageQueue(q, userId.Value)) return Forbid();
+
+        q.Mode = ParseMode(req.Mode);
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+          id = q.Id,
+          name = q.Name,
+          mode = q.Mode.ToString(),
+          isOpen = q.IsOpen,
+          sessionId = q.SessionId
+        });
+    }
+
     private async Task<bool> IsSessionMember(int? sessionId, int userId)
     {
         if (sessionId == null) return false;

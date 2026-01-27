@@ -116,6 +116,8 @@ public class SessionsController : ControllerBase
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var exists = await _db.Sessions.AnyAsync(s => s.OwnerUserId == userId && s.Name == req.Name);
         if (exists) return BadRequest(new { message = "You already have a session with this name" });
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        if (user == null) return Unauthorized();
 
         var session = new Session
         {
@@ -126,6 +128,13 @@ public class SessionsController : ControllerBase
             CreatedAt = DateTime.UtcNow
         };
         _db.Sessions.Add(session);
+
+        // Promote creator to QueueMaster (unless already elevated)
+        if (user.Role == Role.Player)
+        {
+            user.Role = Role.QueueMaster;
+        }
+
         await _db.SaveChangesAsync();
 
         return Ok(new { session.Id, session.Name, session.Description, session.IsPublic });
@@ -178,6 +187,8 @@ public class SessionsController : ControllerBase
         var session = await _db.Sessions.Include(s => s.Members).FirstOrDefaultAsync(s => s.Id == id);
         if (session == null) return NotFound(new { message = "Session not found" });
         if (session.OwnerUserId != userId) return Forbid();
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        var hasOtherOwnedSessions = await _db.Sessions.AnyAsync(s => s.OwnerUserId == userId && s.Id != id);
 
         var queues = await _db.Queues.Where(q => q.SessionId == id).ToListAsync();
         foreach (var q in queues)
@@ -187,6 +198,13 @@ public class SessionsController : ControllerBase
 
         _db.SessionMembers.RemoveRange(session.Members);
         _db.Sessions.Remove(session);
+
+        // Demote creator if this was their last owned session and they aren't admin
+        if (user != null && user.Role == Role.QueueMaster && !hasOtherOwnedSessions)
+        {
+            user.Role = Role.Player;
+        }
+
         await _db.SaveChangesAsync();
         return Ok(new { message = "Session deleted", id });
     }
